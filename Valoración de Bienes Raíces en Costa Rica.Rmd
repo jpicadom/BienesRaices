@@ -1,0 +1,133 @@
+---
+Título: "Valoración de Bienes Raíces en Costa Rica"
+Autor: "Jonathan Picado"
+Fecha: "1 de marzo de 2017"
+Tipo: html_document
+highlight: pygments 
+---
+# VALORACION DE BIENES RAICES EN COSTA RICA
+por Jonathan Picado M.
+
+## 1. Comprensión del Negocio
+### a) Objetivo del negocio
+Identificar las mejores opciones de inversión en bienes raíces de Costa Rica mediante una clasificación de las propiedades publicadas en páginas web.  Para ello se ha seleccionado encuentra24.com/costa-rica ya que contiene 20,000 propiedades en venta regularmente. En la actualidad, tal información no está disponible de forma resumida de modo que se facilite su análisis.  Para hacerlo se tendría que accesar cada página, correspondiente a las propiedades, individualmente y pasar luego la información a una hoja de datos para finalmente proceder a hacer el análisis.  Esto consume una cantidad significativa de recursos que eventualmente desalentaría al inversor interesado.
+
+### b) Valoración de la situación
+Las bienes raíces siempre ha sido vistas como una opción rentable de negocios.  Antes del internet, tanto compradores como vendedores tenían la gran limitante de no tener fuentes de información actualizadas, completas y confiables.  Por ejemplo, el periódico era la fuente más común para anunciar la compra o venta de propiedades, pero estaba limitado a 2-4 líneas de texto con información escueta, en medio de cientos de otros anuncios con el mismo formato y que era publicado por 3 días.  Esto limitaba las opciones de inversión y de ganancias de unos u otros, demorando a su vez el proceso de compra/venta.  Con el internet, muchos de éstas limitantes se han reducido o eliminado, y en cambio se han transformado en como manejar efectivamente la cantidad de información disponible.  
+
+### c) Objetivos de la minería de datos
+Determinar las relaciones entre las variables de análisis.
+Clasificar las propiedades en grupos y determinar el precio por metro cuadrado por grupo.
+Clasificar cada propiedad como de precio bajo, medio y alto acorde a cada grupo.
+
+### d) Plan del proyecto
+Para desarrolar el proyecto se seguirá los siguientes pasos:
+1) Escoger la página de internet de referencia (encuentra24.com/costa-rica) que contenga información sobre bienes inmuebles en venta e inspeccionar su código fuente.  Basado en el análisis del código, determinar la estructura del árbol, los elementos, atributos y etiquetas.
+2) Determinar la estrategia a usar para la extracción de los datos. Esta se basa en encontrar la mejor forma de manipular los urls para accesar las múltiples opciones de selección donde residen los datos.  Se usará R para ejecutar todo el proceso.
+3) Extraer los enlaces para cada una de las páginas que componen la página de referencia.  Para ello se usará las siguientes librerías: RCurl, XML, stringr.
+4) Accesar cada enlace, extraer toda la información de cada página como un documento XML y guardarla en el disco duro.
+5) Aplicar web content mining para extraer la información valiosa de los datos guardados y resumirlos en una tabla o data frame.
+6) Limpiar y validar los datos.
+7) Aplicar los métodos de exploratorios y de clasificación de minería de datos.  Este proceso se realiza directamente en R con datos actuales.  Al estar programado, posteriormente los datos se podrían extraer de forma periódica para análisis de series de tiempo.
+
+
+## 1. Comprensión de los Datos
+### Recolección de datos iniciales
+
+```{r,include=FALSE}
+# Definición del directorio de trabajo y carga de las librerías
+setwd("C:/Users/Jonathan/Documents/Jonathan P/Trabajos/Intel/Data Mining & ML/Data Mining Expert/10-Proyecto/")
+paquetes <- c("XML","ggplot2","RJSONIO","stringr","jsonlite","plyr","rvest","cluster","FactoMineR",
+              "dygraphs","xts","forecast","tm","SnowballC","RCurl","lubridate","randomForest","e1071",
+              "stringr","data.table","tidyr","filesstrings","gsubfn","stringr")
+lapply(paquetes, require, character.only = TRUE) # Carga las librerias necesarias
+```
+
+```{r}
+ruta <-"http://www.encuentra24.com/costa-rica-es/bienes-raices-venta-de-propiedades" #Ruta principal de la pagina
+resultados <- getURL(ruta) #Se obtiene la informacion
+resultados_arbol <- htmlParse(resultados,useInternalNodes = TRUE) #Se crea un objeto que la represente en R
+class(resultados_arbol)
+
+#Obtención de los links de las categorias de propiedades 
+enlaces<-character() # Inicia el objeto enlaces
+enlaces<-c(enlaces, xpathSApply(resultados_arbol,"//div[@class='subcategory-container']//a",xmlGetAttr, "href")) 
+enlaces<-str_c("www.encuentra24.com",enlaces) # Asigna el url a los enlaces
+enlaces<-enlaces[-c(4,10)] # Elimina propiedades en la playa y en islas que no son de interés
+enlaces <-unique(enlaces)
+head(enlaces)
+
+#Obtencion de los links de las propiedades
+propiedades <-character()
+totalPages <-character()
+# Funcion para extraer todas las paginas de una enlace
+getPageURLs <- function(url) {
+  url <- paste0(ruta,gsub("www.encuentra24.com/costa-rica-es/bienes-raices-venta-de-propiedades", "", enlaces[i]))
+  baseurl <- htmlParse(url) 
+  paginas <- url %>% read_html() %>% html_nodes('.resultnumber') %>% html_text() #Cantidad de anuncios por enlace
+  paginas <- ceiling(NthNumber(paginas, n = 1)/NthNumber(paginas, n = 3)) #Cantidad de pags por enlace
+  sigPag <- str_c(".", seq(1,paginas, 1)) # Crea toda la secuencia de páginas
+  urls_list <- as.list(str_c(url, sigPag)) # AÃ±ade la secuencia a cada url 
+  urls_list[length(urls_list) + 1] <- url # AÃ±ade la primera página de cada enlace [i]
+  return(urls_list)
+}
+
+# Entraccion de las paginas de todos los enlaces
+for(i in 1:length(enlaces)){
+  url <- paste0(ruta,gsub("www.encuentra24.com/costa-rica-es/bienes-raices-venta-de-propiedades", "", enlaces[i]))
+  urls_list <- getPageURLs(url)
+  totalPages <- c(totalPages,urls_list)
+}
+````
+
+
+
+````{r}
+#Funcion para extraer todas las propiedades de un pagina
+getPageProps <- function(page) {
+  resultados <- getURL(page)
+  resultados_arbol <- htmlParse(resultados) #Se obtiene el contenido del enlace i
+  propiedades <- xpathSApply(resultados_arbol,"//div[@class='ann-box-details']//a",xmlGetAttr, "href")
+  propiedades <- unique(propiedades)
+  return(propiedades)
+}
+# Extracccion de todas las propiedades
+listaProp <- sapply(totalPages,getPageProps)
+listaProp <-character()
+for(i in 1:length(totalPages)){
+  page <- totalPages[i]
+  listaN <- getPageProps(page)
+  listaProp <- c(listaProp,listaN)
+}
+head(listaProp)
+
+# Extraccion de los codigos de cada propiedad para nombras los archivos
+codigoProp <- sapply(listaProp,function (x) {substr(x,nchar(x)-6,nchar(x))})
+listaProp <- paste0("www.encuentra24.com", listaProp) # Agrega la direccion a cada propiedad
+tail(listaProp)
+
+```
+
+```{r}
+# Guardar el contenido de los links en la PC
+#setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+#Con la funcion comentada puede acceder al directorio de trabajo, pero no sirve en el autoreproducible
+firmas = system.file("CurlSSL", cainfo = "cacert.pem", package = "RCurl")
+if(!dir.exists("Publicaciones"))
+  dir.create("Publicaciones") #Se crea la carpeta Publicaciones
+  #Se descargan los contenidos de cada link
+  for(i in 1:length(listaProp)){
+    setwd <-paste(getwd(),"/Publicaciones")
+    if (file.exists(codigoProp[i]))
+      url <- listaProp[i] #Le concatena a la direccion web
+      tmp <- getURL(url, cainfo = firmas) #Descarga el contenido, utiliza informacion del Cert Autenticidad
+      write(tmp, str_c("Publicaciones/", codigoProp[i], ".xml")) #Guarda las publicaciones localmente con formato xml
+}
+length(list.files("Publicaciones")) # Total de publicaciones
+```
+
+
+```{r}
+
+```
+
